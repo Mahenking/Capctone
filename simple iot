@@ -1,1 +1,139 @@
 
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WebServer.h>
+
+const char* ssid = "Mower_Bot";
+const char* password = "0000";
+
+WebServer server(80);
+
+const int leftMotorForward = 26;
+const int leftMotorBackward = 27;
+const int rightMotorForward = 14;
+const int rightMotorBackward = 12;
+const int bladePin = 13; 
+
+
+enum Mode { MANUAL, AUTONOMOUS };
+Mode currentMode = MANUAL;
+bool isAutoRunning = false; 
+unsigned long lastAutoActionTime = 0; 
+
+
+void moveForward();
+void moveBackward();
+void turnLeft();
+void turnRight();
+void stopRobot();
+void emergencyStop();
+void runAutonomousRoutine();
+
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(leftMotorForward, OUTPUT);
+  pinMode(leftMotorBackward, OUTPUT);
+  pinMode(rightMotorForward, OUTPUT);
+  pinMode(rightMotorBackward, OUTPUT);
+  pinMode(bladePin, OUTPUT);
+
+  emergencyStop();
+
+  Serial.println("Setting up Access Point...");
+  WiFi.softAP(ssid, password);
+  Serial.print("AP IP address: ");
+  Serial.println(WiFi.softAPIP()); 
+
+  server.on("/mode/manual", []() { 
+    currentMode = MANUAL; 
+    isAutoRunning = false;
+    stopRobot();
+    server.send(200, "text/plain", "Mode: Manual"); 
+  });
+  
+  server.on("/mode/auto", []() { 
+    currentMode = AUTONOMOUS; 
+    server.send(200, "text/plain", "Mode: Autonomous"); 
+  });
+
+  server.on("/auto/start", []() {
+    if(currentMode == AUTONOMOUS) {
+      isAutoRunning = true;
+      server.send(200, "text/plain", "Auto: Started");
+    } else {
+      server.send(400, "text/plain", "Error: Not in Auto Mode");
+    }
+  });
+
+  server.on("/auto/pause", []() {
+    isAutoRunning = false;
+    stopRobot();
+    server.send(200, "text/plain", "Auto: Paused");
+  });
+
+  server.on("/emergency", []() { 
+    emergencyStop(); 
+    server.send(200, "text/plain", "EMERGENCY STOP ACTIVATED"); 
+  });
+
+  server.on("/blade_on", []() { digitalWrite(bladePin, HIGH); server.send(200, "text/plain", "Blade ON"); });
+  server.on("/blade_off", []() { digitalWrite(bladePin, LOW); server.send(200, "text/plain", "Blade OFF"); });
+
+  server.on("/forward", []() { if(currentMode == MANUAL) moveForward(); server.send(200, "text/plain", "Moving Forward"); });
+  server.on("/backward", []() { if(currentMode == MANUAL) moveBackward(); server.send(200, "text/plain", "Moving Backward"); });
+  server.on("/left", []() { if(currentMode == MANUAL) turnLeft(); server.send(200, "text/plain", "Turning Left"); });
+  server.on("/right", []() { if(currentMode == MANUAL) turnRight(); server.send(200, "text/plain", "Turning Right"); });
+  server.on("/stop", []() { stopRobot(); server.send(200, "text/plain", "Stopped"); });
+
+  server.begin();
+  Serial.println("HTTP server started");
+}
+
+void loop() {
+  server.handleClient(); 
+
+  if (currentMode == AUTONOMOUS && isAutoRunning) {
+    runAutonomousRoutine();
+  }
+}
+
+void runAutonomousRoutine() {
+  if (millis() - lastAutoActionTime > 1000) { 
+    moveForward(); 
+    lastAutoActionTime = millis();
+  }
+}
+
+void moveForward() {
+  digitalWrite(leftMotorForward, HIGH); digitalWrite(leftMotorBackward, LOW);
+  digitalWrite(rightMotorForward, HIGH); digitalWrite(rightMotorBackward, LOW);
+}
+
+void moveBackward() {
+  digitalWrite(leftMotorForward, LOW); digitalWrite(leftMotorBackward, HIGH);
+  digitalWrite(rightMotorForward, LOW); digitalWrite(rightMotorBackward, HIGH);
+}
+
+void turnLeft() {
+  digitalWrite(leftMotorForward, LOW); digitalWrite(leftMotorBackward, HIGH);
+  digitalWrite(rightMotorForward, HIGH); digitalWrite(rightMotorBackward, LOW);
+}
+
+void turnRight() {
+  digitalWrite(leftMotorForward, HIGH); digitalWrite(leftMotorBackward, LOW);
+  digitalWrite(rightMotorForward, LOW); digitalWrite(rightMotorBackward, HIGH);
+}
+
+void stopRobot() {
+  digitalWrite(leftMotorForward, LOW); digitalWrite(leftMotorBackward, LOW);
+  digitalWrite(rightMotorForward, LOW); digitalWrite(rightMotorBackward, LOW);
+}
+
+void emergencyStop() {
+  stopRobot();
+  digitalWrite(bladePin, LOW);
+  isAutoRunning = false;
+  currentMode = MANUAL; 
+}
