@@ -1,75 +1,119 @@
 #include <Arduino.h>
 
-//all pin i random put first
-#define LEFT_PWM_PIN  18
-#define LEFT_DIR1_PIN 19
-#define LEFT_DIR2_PIN 21
+// Front Wheels
+#define PWMA_1 4   // Wheel 1 PID (Speed)
+#define AIN1_1 5   // Wheel 1 DIR
+#define AIN2_1 6   // Wheel 1 DIR
+#define PWMB_1 7   // Wheel 2 PID (Speed)
+#define BIN1_1 15  // Wheel 2 DIR
+#define BIN2_1 16  // Wheel 2 DIR
+#define STBY   12  // TB6612 Enable
 
-#define RIGHT_PWM_PIN 22
-#define RIGHT_DIR1_PIN 23
-#define RIGHT_DIR2_PIN 25
+// Back Wheels
+#define PWMA_2 17  // Wheel 3 PID (Speed)
+#define AIN1_2 18  // Wheel 3 DIR
+#define AIN2_2 8   // Wheel 3 DIR
+#define PWMB_2 9   // Wheel 4 PID (Speed)
+#define BIN1_2 10  // Wheel 4 DIR
+#define BIN2_2 11  // Wheel 4 DIR
 
-#define BLADE_PWM_PIN 26
-#define BLADE_DIR1_PIN 27
-#define BLADE_DIR2_PIN 32
+#define ENC_A_1 1  // PID feedback W1
+#define ENC_B_1 2  
+#define ENC_A_2 41 // PID feedback W2
+#define ENC_B_2 42 
+#define ENC_A_3 39 // PID feedback W3
+#define ENC_B_3 40 
+#define ENC_A_4 37 // PID feedback W4
+#define ENC_B_4 38 
 
-const int freq = 5000;  //may change
-const int leftChannel = 0;
-const int rightChannel = 1;
-const int bladeChannel = 2;
-const int resolution = 8;
+// --- Rotor Motor (BTS7960) ---
+#define RPWM   13  // BTS7960 rotor speed/dir
+#define LPWM   14  // BTS7960 rotor speed/dir
+#define R_EN   21  // BTS7960 enable Right
+#define L_EN   47  // BTS7960 enable Left
 
-void setupMotors() {
-  pinMode(LEFT_DIR1_PIN, OUTPUT);
-  pinMode(LEFT_DIR2_PIN, OUTPUT);
-  pinMode(RIGHT_DIR1_PIN, OUTPUT);
-  pinMode(RIGHT_DIR2_PIN, OUTPUT);
-  pinMode(BLADE_DIR1_PIN, OUTPUT);
-  pinMode(BLADE_DIR2_PIN, OUTPUT);
 
-  ledcSetup(leftChannel, freq, resolution);
-  ledcAttachPin(LEFT_PWM_PIN, leftChannel);
-  
-  ledcSetup(rightChannel, freq, resolution);
-  ledcAttachPin(RIGHT_PWM_PIN, rightChannel);
+#define LED_PIN 48
 
-  ledcSetup(bladeChannel, freq, resolution);
-  ledcAttachPin(BLADE_PWM_PIN, bladeChannel);
-}
-
-// will change to cut grass based on height
-void setMotorSpeed(int channel, int pin1, int pin2, float speed) {
+void setRotorSpeed(int speed) {
   if (speed > 0) {
-    digitalWrite(pin1, HIGH);
-    digitalWrite(pin2, LOW);
+    analogWrite(LPWM, 0);
+    analogWrite(RPWM, speed);
   } else if (speed < 0) {
-    digitalWrite(pin1, LOW);
-    digitalWrite(pin2, HIGH);
+    analogWrite(RPWM, 0);
+    analogWrite(LPWM, -speed);
   } else {
-    digitalWrite(pin1, LOW);
-    digitalWrite(pin2, LOW);
+    analogWrite(RPWM, 0);
+    analogWrite(LPWM, 0);
   }
-  
-  int pwm_val = min(abs((int)speed), 255);
-  ledcWrite(channel, pwm_val);
 }
 
-//TASK 1: Handle Wheel
+void setWheel1(int speed) {
+  if (speed > 0) {
+    digitalWrite(AIN1_1, HIGH);
+    digitalWrite(AIN2_1, LOW);
+    analogWrite(PWMA_1, speed);
+  } else if (speed < 0) {
+    digitalWrite(AIN1_1, LOW);
+    digitalWrite(AIN2_1, HIGH);
+    analogWrite(PWMA_1, -speed);
+  } else {
+    digitalWrite(AIN1_1, LOW);
+    digitalWrite(AIN2_1, LOW);
+    analogWrite(PWMA_1, 0);
+  }
+}
 
-
-//TASK 2: Control Blade
-
-
-//TASK 3: Read ros2 commands
 
 void setup() {
   Serial.begin(115200);
-  setupMotors();
+  
+  pinMode(PWMA_1, OUTPUT);
+  pinMode(AIN1_1, OUTPUT);
+  pinMode(AIN2_1, OUTPUT);
+  pinMode(PWMB_1, OUTPUT);
+  pinMode(BIN1_1, OUTPUT);
+  pinMode(BIN2_1, OUTPUT);
+  pinMode(STBY, OUTPUT);
 
+  pinMode(PWMA_2, OUTPUT);
+  pinMode(AIN1_2, OUTPUT);
+  pinMode(AIN2_2, OUTPUT);
+  pinMode(PWMB_2, OUTPUT);
+  pinMode(BIN1_2, OUTPUT);
+  pinMode(BIN2_2, OUTPUT);
+
+  pinMode(ENC_A_1, INPUT_PULLUP);
+  pinMode(ENC_B_1, INPUT_PULLUP);
+  pinMode(ENC_A_2, INPUT_PULLUP);
+  pinMode(ENC_B_2, INPUT_PULLUP);
+  pinMode(ENC_A_3, INPUT_PULLUP);
+  pinMode(ENC_B_3, INPUT_PULLUP);
+  pinMode(ENC_A_4, INPUT_PULLUP);
+  pinMode(ENC_B_4, INPUT_PULLUP);
+
+  pinMode(RPWM, OUTPUT);
+  pinMode(LPWM, OUTPUT);
+  pinMode(R_EN, OUTPUT);
+  pinMode(L_EN, OUTPUT);
+
+
+  pinMode(LED_PIN, OUTPUT);
+
+  
+  digitalWrite(STBY, HIGH); 
+  digitalWrite(R_EN, HIGH);
+  digitalWrite(L_EN, HIGH);
+  
+  
+  setWheel1(0);
+  setRotorSpeed(0);
+ 
+  Serial.println("ESP32 IoT Mower Initialized.");
 }
+
+
 
 void loop() {
-  
+  delay(10); 
 }
-
-
