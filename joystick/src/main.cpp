@@ -3,27 +3,25 @@
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
 
-// WIFI
-const char* ssid = "IQOO Z9 5G";
-const char* password = "wannasif";
+const char* ssid = "wifi";
+const char* password = "pass";
 
-// WEBSOCKET
 WebSocketsServer webSocket = WebSocketsServer(81);
 
-float joyX = 0;
-float joyY = 0;
-bool emergencyStop = false;
-
-SemaphoreHandle_t xMutex;
-
-void setMotorSpeed(int left, int right)
+typedef struct 
 {
-  Serial.printf("Left: %d | Right: %d\n", left, right);
-}
+  float x;
+  float y;
+  bool emergency;
+} JoystickData;
 
-// JOYSTICK PROCESS
-void processJoystick(float x, float y)
+QueueHandle_t joystickQueue;
+TaskHandle_t controlTaskHandle;
+
+void processJoystick(float x, float y) 
 {
+
+  // Deadzone
   if (abs(x) < 0.1) x = 0;
   if (abs(y) < 0.1) y = 0;
 
@@ -33,45 +31,73 @@ void processJoystick(float x, float y)
   left = constrain(left, -255, 255);
   right = constrain(right, -255, 255);
 
-  setMotorSpeed(left, right);
+  Serial.printf("Processed → Left: %d | Right: %d\n", left, right);
 }
 
-// WEBSOCKET EVENT
-void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length)
+void controlTask(void *pvParameters) 
 {
-  if (type == WStype_TEXT)
+
+  JoystickData data;
+
+  while (true) 
   {
-    StaticJsonDocument<200> doc;
-    DeserializationError error = deserializeJson(doc, payload);
 
-    if (error) return;
-
-    xSemaphoreTake(xMutex, portMAX_DELAY);
-
-    if (doc.containsKey("stop"))
+    if (xQueueReceive(joystickQueue, &data, portMAX_DELAY)) 
     {
-      emergencyStop = true;
-    }
-    else
-    {
-      joyX = doc["x"];
-      joyY = doc["y"];
-      emergencyStop = false;
-    }
 
-    xSemaphoreGive(xMutex);
+      if (data.emergency) 
+      {
+        Serial.println("!!! EMERGENCY STOP !!!");
+        Serial.println("Left: 0 | Right: 0");
+        continue;
+      }
+
+      processJoystick(data.x, data.y);
+    }
   }
 }
 
-// TASK 1
-void TaskWiFi(void *pvParameters)
+void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) 
 {
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
 
-  while (WiFi.status() != WL_CONNECTED)
+  if (type == WStype_TEXT) 
   {
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+
+    StaticJsonDocument<200> doc;
+    DeserializationError error = deserializeJson(doc, payload);
+
+    if (error) 
+    {
+      Serial.println("JSON Error");
+      return;
+    }
+
+    JoystickData data;
+
+    if (doc.containsKey("stop")) 
+    {
+      data.emergency = true;
+    } else 
+    {
+      data.emergency = false;
+      data.x = doc["x"] | 0.0;
+      data.y = doc["y"] | 0.0;
+    }
+
+    xQueueSend(joystickQueue, &data, 0);
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  joystickQueue = xQueueCreate(10, sizeof(JoystickData));
+
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
     Serial.print(".");
   }
 
@@ -81,62 +107,18 @@ void TaskWiFi(void *pvParameters)
   webSocket.begin();
   webSocket.onEvent(onWebSocketEvent);
 
-  vTaskDelete(NULL); // selesai
+  xTaskCreatePinnedToCore(
+    controlTask,        
+    "Control Task",     
+    4096,               
+    NULL,               
+    1,                  
+    &controlTaskHandle,
+    1                  
+  );
 }
 
-// TASK 2
-void TaskWebSocket(void *pvParameters)
+void loop() 
 {
-  while (true)
-  {
-    webSocket.loop();
-    vTaskDelay(10 / portTICK_PERIOD_MS);
-  }
-}
-
-// TASK 3
-void TaskMotor(void *pvParameters)
-{
-  float x, y;
-  bool stopFlag;
-
-  while (true)
-  {
-    xSemaphoreTake(xMutex, portMAX_DELAY);
-
-    x = joyX;
-    y = joyY;
-    stopFlag = emergencyStop;
-
-    xSemaphoreGive(xMutex);
-
-    if (stopFlag)
-    {
-      setMotorSpeed(0, 0);
-    }
-    else
-    {
-      processJoystick(x, y);
-    }
-
-    vTaskDelay(50 / portTICK_PERIOD_MS); 
-  }
-}
-
-//  SETUP 
-
-void setup()
-{
-  Serial.begin(115200);
-
-  xMutex = xSemaphoreCreateMutex();
-
-  xTaskCreatePinnedToCore(TaskWiFi, "WiFi Task", 4096, NULL, 1, NULL, 0);
-  xTaskCreatePinnedToCore(TaskWebSocket, "WebSocket Task", 4096, NULL, 2, NULL, 1);
-  xTaskCreatePinnedToCore(TaskMotor, "Motor Task", 4096, NULL, 2, NULL, 1);
-}
-
-void loop()
-{
-
+  webSocket.loop(); 
 }
